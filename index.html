@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>유리수 순환소수 내신빈출(2)</title>
+  <!-- MathJax 라이브러리 로드 -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    /* 흑백 색상만 사용 */
+    body {
+      font-family: sans-serif;
+      background-color: white;
+      color: black;
+      margin: 20px;
+    }
+    h1, h2, p {
+      margin: 10px 0;
+    }
+    button {
+      font-size: 16px;
+      margin: 5px;
+      padding: 5px 10px;
+      background-color: white;
+      color: black;
+      border: 1px solid black;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: black;
+      color: white;
+    }
+    .hidden {
+      display: none;
+    }
+    #energyBarContainer {
+      width: 100%;
+      height: 20px;
+      border: 1px solid black;
+      background-color: white;
+      margin: 10px 0;
+    }
+    #energyBar {
+      height: 100%;
+      background-color: black;
+      width: 100%;
+    }
+    #questionContainer p {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>유리수 순환소수 내신빈출(2)</h1>
+  <!-- 시작 화면: 이름 입력 및 난이도 선택 -->
+  <div id="startScreen">
+    <p>이름: <input type="text" id="playerName"></p>
+    <p>
+      난이도 선택:
+      <select id="difficulty">
+        <option value="최상">최상 (20초 시작 – 1문제당 20점)</option>
+        <option value="상">상 (30초 시작 – 1문제당 15점)</option>
+        <option value="중">중 (40초 시작 – 1문제당 13점)</option>
+        <option value="하">하 (시간제한 없음 – 1문제당 10점)</option>
+      </select>
+    </p>
+    <button id="startButton">게임 시작</button>
+  </div>
+
+  <!-- 게임 화면 -->
+  <div id="gameScreen" class="hidden">
+    <div>
+      <span id="scoreDisplay">점수: 0</span> |
+      <span id="chancesDisplay">남은 기회: 3</span> |
+      <span id="timerDisplay">전체 게임 시간: 0초</span>
+    </div>
+    <!-- 시간제한이 있는 난이도에서만 에너지바 표시 -->
+    <div id="energyBarContainer" class="hidden">
+      <div id="energyBar"></div>
+    </div>
+    <div id="questionContainer"></div>
+    <div id="message"></div>
+  </div>
+
+  <!-- 게임 종료 후 점수 전송 화면 -->
+  <div id="gameOverScreen" class="hidden">
+    <h2>게임 종료</h2>
+    <p id="finalScore"></p>
+    <p id="finalTime"></p>
+    <button id="submitScoreButton">점수전송</button>
+    <pre id="response"></pre>
+  </div>
+
+  <script>
+    /* -------------------------
+       데이터 전송 함수 (saveData)
+       ------------------------- */
+    function saveData(game, name, score, elapsedTime) {
+      const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+      const requestData = {
+          game,
+          name,
+          score: parseInt(score, 10),
+          elapsedTime: parseInt(elapsedTime, 10)
+      };
+
+      fetch(FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestData)
+      })
+      .then(response => response.json().then(responseData => {
+          if (response.ok) {
+              document.getElementById('response').innerText =
+                  "성공: " + JSON.stringify(responseData, null, 2);
+          } else {
+              document.getElementById('response').innerText =
+                  "오류: " + JSON.stringify(responseData, null, 2);
+          }
+      }))
+      .catch(error => {
+          console.error('요청 실패:', error);
+          document.getElementById('response').innerText =
+              "네트워크 오류: " + error.message;
+      });
+    }
+
+    /* -------------------------
+       전역 변수 및 헬퍼 함수
+       ------------------------- */
+    let questions = [];
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let remainingChances = 3;
+    let overallTime = 0;
+    let overallTimerInterval;
+    let questionTimerInterval;
+    let questionTimeLimit = 0;
+    let difficultyPoints = 0;
+    let currentQuestion;
+    let gameInProgress = false;
+
+    // 배열 무작위 섞기 함수
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    /* -------------------------
+       문제 데이터 초기화
+       ------------------------- */
+    function initQuestions() {
+      questions = [
+        // 문제 13 (타입 A)
+        {
+          question: "분수 \\(\\dfrac{3}{2 \\times 5^2 \\times a}\\)를 소수로 나타내면 순환소수가 될 때, \\(a\\)의 값이 될 수 없는 자연수들의 합을 구하시오. (단, \\(10 \\le a < 20\\))",
+          choices: ["\\(35\\)", "\\(36\\)", "\\(37\\)", "\\(53\\)", "\\(70\\)"],
+          correct: "\\(53\\)"
+        },
+        // 문제 19 (타입 B) – 순환표기 변경
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{6}\\dot{3}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(2\\)", "\\(3\\)", "\\(5\\)", "\\(6\\)", "\\(7\\)"],
+          correct: "\\(7\\)"
+        },
+        // 문제 21 (타입 C)
+        {
+          question: "다음 무한급수를 계산하시오. \\(5 + \\dfrac{7}{10^2} + \\dfrac{7}{10^4} + \\dfrac{7}{10^6} + \\cdots\\)",
+          choices: ["\\(\\dfrac{502}{90}\\)", "\\(\\dfrac{502}{99}\\)", "\\(\\dfrac{503}{990}\\)", "\\(\\dfrac{503}{999}\\)", "\\(\\dfrac{503}{9990}\\)"],
+          correct: "\\(\\dfrac{502}{99}\\)"
+        },
+        // 문제 23 (타입 D)
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{2}{9} \\le \\dfrac{n}{45} \\le \\dfrac{1}{3}\\)인 분수들 중, 약분이 가능한(즉, 기약분수가 아닌) 분수의 개수를 구하시오.",
+          choices: ["\\(2\\)개", "\\(3\\)개", "\\(5\\)개", "\\(20\\)개", "\\(22\\)개"],
+          correct: "\\(3\\)개"
+        },
+        // ─────────────────────────────
+        // [타입 A – 추가 문제 7문항]
+        {
+          question: "분수 \\(\\dfrac{2}{2 \\times 5^2 \\times a}\\)를 소수로 나타낼 때 유한소수가 되는 조건을 만족하는 \\(a\\)의 값(자연수) 중, \\(5 \\le a \\le 15\\)인 경우의 합은?",
+          choices: ["\\(23\\)", "\\(24\\)", "\\(25\\)", "\\(30\\)", "\\(35\\)"],
+          correct: "\\(23\\)"
+        },
+        {
+          question: "분수 \\(\\dfrac{4}{2 \\times 5^2 \\times a}\\)를 소수로 나타낼 때 순환소수가 되는 조건이 성립하는 \\(a\\)의 값(자연수) 중, \\(8 \\le a \\le 18\\)인 경우의 합은?",
+          choices: ["\\(109\\)", "\\(110\\)", "\\(111\\)", "\\(112\\)", "\\(113\\)"],
+          correct: "\\(109\\)"
+        },
+        {
+          question: "분수 \\(\\dfrac{5}{2 \\times 5^2 \\times a}\\)를 소수로 나타내면 순환소수가 될 때, \\(a\\)가 될 수 없는 자연수들의 합을 구하시오. (단, \\(12 \\le a < 22\\))",
+          choices: ["\\(127\\)", "\\(128\\)", "\\(\\,129\\)", "\\(130\\)", "\\(131\\)"],
+          correct: "\\(129\\)"
+        },
+        {
+          // 문제 설명이 순환마디 여러 개를 직접적으로 쓰진 않았지만,
+          // "순환소수가 되는 조건"이므로 표기에 변화는 없음 (문장 그대로 유지).
+          question: "분수 \\(\\dfrac{7}{2 \\times 5^2 \\times a}\\)를 소수로 나타내면 순환소수가 될 때, \\(a\\)가 될 수 없는 자연수들의 합을 구하시오. (단, \\(a < 15\\))",
+          choices: ["\\(52\\)개", "\\(53\\)개", "\\(54\\)개", "\\(55\\)개", "\\(56\\)개"],
+          correct: "\\(54\\)개"
+        },
+        {
+          question: "분수 \\(\\dfrac{9}{2 \\times 5^2 \\times a}\\)를 소수로 나타낼 때 순환소수가 되는 \\(a\\)의 값(자연수) 중, \\(20 \\le a \\le 30\\)인 것들의 합은?",
+          choices: ["\\(170\\)", "\\(174\\)", "\\(176\\)", "\\(178\\)", "\\(180\\)"],
+          correct: "\\(176\\)"
+        },
+        {
+          question: "분수 \\(\\dfrac{8}{2 \\times 5^2 \\times a}\\)를 소수로 나타낼 때 유한소수가 되는 조건을 만족하는 \\(a\\)의 값(자연수) 중, \\(15 \\le a \\le 25\\)인 것들의 합은?",
+          choices: ["\\(60\\)", "\\(61\\)", "\\(62\\)", "\\(63\\)", "\\(64\\)"],
+          correct: "\\(61\\)"
+        },
+        {
+          question: "분수 \\(\\dfrac{6}{2 \\times 5^2 \\times a}\\)를 소수로 나타내면 순환소수가 되는 조건이 만족되는 \\(a\\)의 값(자연수) 중, \\(10 \\le a \\le 19\\)인 것들의 합은?",
+          choices: ["\\(91\\)", "\\(92\\)", "\\(93\\)", "\\(94\\)", "\\(95\\)"],
+          correct: "\\(92\\)"
+        },
+        // ─────────────────────────────
+        // [타입 B – 추가 문제 7문항] (모두 순환표기 변경)
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{4}\\dot{5}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(2\\)", "\\(3\\)", "\\(5\\)", "\\(6\\)", "\\(7\\)"],
+          correct: "\\(5\\)"
+        },
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{3}\\dot{6}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(1\\)", "\\(2\\)", "\\(3\\)", "\\(4\\)", "\\(5\\)"],
+          correct: "\\(4\\)"
+        },
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{7}\\dot{2}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(6\\)", "\\(7\\)", "\\(8\\)", "\\(9\\)", "\\(10\\)"],
+          correct: "\\(8\\)"
+        },
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{1}\\dot{8}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(1\\)", "\\(2\\)", "\\(3\\)", "\\(4\\)", "\\(5\\)"],
+          correct: "\\(2\\)"
+        },
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{2}\\dot{7}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(1\\)", "\\(2\\)", "\\(3\\)", "\\(4\\)", "\\(5\\)"],
+          correct: "\\(3\\)"
+        },
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{5}\\dot{4}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(4\\)", "\\(5\\)", "\\(6\\)", "\\(7\\)", "\\(8\\)"],
+          correct: "\\(6\\)"
+        },
+        {
+          question: "한 자리의 자연수 \\(a, b\\)에 대하여 \\(0.\\dot{a}\\dot{b} - 0.\\dot{b}\\dot{a} = 0.\\dot{8}\\dot{1}\\)일 때, \\(a - b\\)의 값을 구하시오.",
+          choices: ["\\(7\\)", "\\(8\\)", "\\(9\\)", "\\(10\\)", "\\(11\\)"],
+          correct: "\\(9\\)"
+        },
+        // ─────────────────────────────
+        // [타입 C – 추가 문제 7문항] (유한급수 문제들이므로 기존대로)
+        {
+          question: "다음 무한급수를 계산하시오. \\(7 + \\dfrac{5}{10^2} + \\dfrac{5}{10^4} + \\dfrac{5}{10^6} + \\cdots\\)",
+          choices: ["\\(\\dfrac{698}{99}\\)", "\\(\\dfrac{699}{99}\\)", "\\(\\dfrac{700}{99}\\)", "\\(\\dfrac{698}{100}\\)", "\\(\\dfrac{699}{100}\\)"],
+          correct: "\\(\\dfrac{698}{99}\\)"
+        },
+        {
+          question: "다음 무한급수를 계산하시오. \\(3 + \\dfrac{8}{10^3} + \\dfrac{8}{10^6} + \\dfrac{8}{10^9} + \\cdots\\)",
+          choices: ["\\(\\dfrac{3005}{999}\\)", "\\(\\dfrac{3006}{999}\\)", "\\(\\dfrac{3005}{1000}\\)", "\\(\\dfrac{3006}{1000}\\)", "\\(\\dfrac{3007}{999}\\)"],
+          correct: "\\(\\dfrac{3005}{999}\\)"
+        },
+        {
+          question: "다음 무한급수를 계산하시오. \\(4 + \\dfrac{9}{10} + \\dfrac{9}{10^3} + \\dfrac{9}{10^5} + \\cdots\\)",
+          choices: ["\\(\\dfrac{54}{11}\\)", "\\(\\dfrac{55}{11}\\)", "\\(\\dfrac{53}{11}\\)", "\\(\\dfrac{54}{10}\\)", "\\(\\dfrac{55}{10}\\)"],
+          correct: "\\(\\dfrac{54}{11}\\)"
+        },
+        {
+          question: "다음 무한급수를 계산하시오. \\(6 + \\dfrac{6}{10^2} + \\dfrac{6}{10^4} + \\dfrac{6}{10^6} + \\cdots\\)",
+          choices: ["\\(\\dfrac{200}{33}\\)", "\\(\\dfrac{200}{32}\\)", "\\(\\dfrac{201}{33}\\)", "\\(\\dfrac{198}{33}\\)", "\\(\\dfrac{202}{33}\\)"],
+          correct: "\\(\\dfrac{200}{33}\\)"
+        },
+        {
+          question: "다음 무한급수를 계산하시오. \\(2 + \\dfrac{4}{10^3} + \\dfrac{4}{10^6} + \\dfrac{4}{10^9} + \\cdots\\)",
+          choices: ["\\(\\dfrac{2002}{999}\\)", "\\(\\dfrac{2002}{1000}\\)", "\\(\\dfrac{2003}{999}\\)", "\\(\\dfrac{2001}{999}\\)", "\\(\\dfrac{2002}{998}\\)"],
+          correct: "\\(\\dfrac{2002}{999}\\)"
+        },
+        {
+          question: "다음 무한급수를 계산하시오. \\(8 + \\dfrac{2}{10} + \\dfrac{2}{10^3} + \\dfrac{2}{10^5} + \\cdots\\)",
+          choices: ["\\(\\dfrac{812}{99}\\)", "\\(\\dfrac{813}{99}\\)", "\\(\\dfrac{812}{100}\\)", "\\(\\dfrac{810}{99}\\)", "\\(\\dfrac{812}{98}\\)"],
+          correct: "\\(\\dfrac{812}{99}\\)"
+        },
+        {
+          question: "다음 무한급수를 계산하시오. \\(9 + \\dfrac{7}{10^4} + \\dfrac{7}{10^8} + \\dfrac{7}{10^{12}} + \\cdots\\)",
+          choices: ["\\(\\dfrac{89998}{9999}\\)", "\\(\\dfrac{89999}{9999}\\)", "\\(\\dfrac{90000}{9999}\\)", "\\(\\dfrac{89998}{10000}\\)", "\\(\\dfrac{90000}{10000}\\)"],
+          correct: "\\(\\dfrac{89998}{9999}\\)"
+        },
+        // ─────────────────────────────
+        // [타입 D – 추가 문제 7문항]
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{1}{5} \\le \\dfrac{n}{45} \\le \\dfrac{1}{2}\\)인 분수들 중, 약분이 가능한 분수의 개수를 구하시오.",
+          choices: ["\\(5\\)개", "\\(6\\)개", "\\(7\\)개", "\\(8\\)개", "\\(9\\)개"],
+          correct: "\\(7\\)개"
+        },
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{1}{3} \\le \\dfrac{n}{45} \\le \\dfrac{2}{3}\\)인 분수들 중, 약분이 가능한 분수의 개수를 구하시오.",
+          choices: ["\\(6\\)개", "\\(7\\)개", "\\(8\\)개", "\\(9\\)개", "\\(10\\)개"],
+          correct: "\\(8\\)개"
+        },
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{1}{9} \\le \\dfrac{n}{45} \\le \\dfrac{2}{5}\\)인 분수들 중, 약분이 가능한 분수의 개수를 구하시오.",
+          choices: ["\\(5\\)개", "\\(6\\)개", "\\(7\\)개", "\\(8\\)개", "\\(9\\)개"],
+          correct: "\\(7\\)개"
+        },
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{3}{5} \\le \\dfrac{n}{45} \\le \\dfrac{4}{5}\\)인 분수들 중, 약분이 가능한 분수의 개수를 구하시오.",
+          choices: ["\\(3\\)개", "\\(4\\)개", "\\(5\\)개", "\\(6\\)개", "\\(7\\)개"],
+          correct: "\\(5\\)개"
+        },
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{2}{5} \\le \\dfrac{n}{45} \\le \\dfrac{3}{5}\\)인 분수들 중, 약분이 가능한 분수의 개수를 구하시오.",
+          choices: ["\\(4\\)개", "\\(5\\)개", "\\(6\\)개", "\\(7\\)개", "\\(8\\)개"],
+          correct: "\\(6\\)개"
+        },
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{1}{15} \\le \\dfrac{n}{45} \\le \\dfrac{2}{15}\\)인 분수들 중, 약분이 가능한 분수의 개수를 구하시오.",
+          choices: ["\\(2\\)개", "\\(3\\)개", "\\(4\\)개", "\\(5\\)개", "\\(6\\)개"],
+          correct: "\\(3\\)개"
+        },
+        {
+          question: "분수 \\(\\dfrac{n}{45}\\) 중에서 \\(\\dfrac{4}{9} \\le \\dfrac{n}{45} \\le \\dfrac{5}{9}\\)인 분수들 중, 약분이 가능한 분수의 개수를 구하시오.",
+          choices: ["\\(3\\)개", "\\(4\\)개", "\\(5\\)개", "\\(6\\)개", "\\(7\\)개"],
+          correct: "\\(4\\)개"
+        }
+      ];
+      // 문제 순서를 무작위로 섞음
+      shuffleArray(questions);
+    }
+
+    /* -------------------------
+       게임 시작 및 타이머 처리
+       ------------------------- */
+    function startGame() {
+      const name = document.getElementById('playerName').value.trim();
+      if (!name) {
+        alert("이름을 입력하세요.");
+        return;
+      }
+      document.getElementById('startScreen').classList.add('hidden');
+      document.getElementById('gameScreen').classList.remove('hidden');
+      // 난이도에 따른 시간제한 및 점수 설정
+      const diff = document.getElementById('difficulty').value;
+      if (diff === "최상") {
+        questionTimeLimit = 20;
+        difficultyPoints = 20;
+      } else if (diff === "상") {
+        questionTimeLimit = 30;
+        difficultyPoints = 15;
+      } else if (diff === "중") {
+        questionTimeLimit = 40;
+        difficultyPoints = 13;
+      } else { // 하: 시간제한 없음
+        questionTimeLimit = 0;
+        difficultyPoints = 10;
+        document.getElementById('energyBarContainer').classList.add('hidden');
+      }
+      if (questionTimeLimit > 0) {
+        document.getElementById('energyBarContainer').classList.remove('hidden');
+      }
+      score = 0;
+      remainingChances = 3;
+      overallTime = 0;
+      gameInProgress = true;
+      updateDisplays();
+      initQuestions();
+      loadNextQuestion();
+      overallTimerInterval = setInterval(function() {
+        overallTime++;
+        document.getElementById('timerDisplay').innerText = "전체 게임 시간: " + overallTime + "초";
+      }, 1000);
+    }
+
+    function updateDisplays() {
+      document.getElementById('scoreDisplay').innerText = "점수: " + score;
+      document.getElementById('chancesDisplay').innerText = "남은 기회: " + remainingChances;
+    }
+
+    /* -------------------------
+       문제 표시 및 처리
+       ------------------------- */
+    function loadNextQuestion() {
+      if (!gameInProgress) return;
+      // 모든 문제를 소진하면, 무작위 문제를 계속 출제
+      if (currentQuestionIndex >= questions.length) {
+        currentQuestionIndex = Math.floor(Math.random() * questions.length);
+      }
+      currentQuestion = questions[currentQuestionIndex];
+      currentQuestionIndex++;
+      displayQuestion(currentQuestion);
+      if (questionTimeLimit > 0) {
+        startQuestionTimer();
+      }
+      // 문제(수식) 동적 렌더링
+      MathJax.typeset();
+    }
+
+    function displayQuestion(q) {
+      const container = document.getElementById('questionContainer');
+      container.innerHTML = "<p>" + q.question + "</p>";
+      // 보기를 무작위로 섞어서 버튼 생성
+      let choices = q.choices.slice();
+      shuffleArray(choices);
+      choices.forEach(function(choice) {
+        const btn = document.createElement("button");
+        btn.innerHTML = choice;
+        btn.onclick = function() { checkAnswer(choice); };
+        container.appendChild(btn);
+      });
+      document.getElementById('message').innerText = "";
+      resetEnergyBar();
+    }
+
+    function checkAnswer(selected) {
+      if (!gameInProgress) return;
+      stopQuestionTimer();
+      if (selected === currentQuestion.correct) {
+        score += difficultyPoints;
+        updateDisplays();
+        document.getElementById('message').innerText = "정답!";
+        setTimeout(loadNextQuestion, 1000);
+      } else {
+        remainingChances--;
+        updateDisplays();
+        document.getElementById('message').innerText = "오답! 정답은 " + currentQuestion.correct;
+        if (remainingChances <= 0) {
+          endGame();
+        } else {
+          setTimeout(loadNextQuestion, 1000);
+        }
+      }
+    }
+
+    /* -------------------------
+       문제 당 시간제한(에너지바) 처리
+       ------------------------- */
+    function startQuestionTimer() {
+      let timeLeft = questionTimeLimit;
+      const energyBar = document.getElementById('energyBar');
+      energyBar.style.width = "100%";
+      questionTimerInterval = setInterval(function() {
+        timeLeft -= 0.1;
+        let percent = (timeLeft / questionTimeLimit) * 100;
+        if (percent < 0) percent = 0;
+        energyBar.style.width = percent + "%";
+        if (timeLeft <= 0) {
+          clearInterval(questionTimerInterval);
+          remainingChances--;
+          updateDisplays();
+          document.getElementById('message').innerText = "시간 초과! 정답은 " + currentQuestion.correct;
+          if (remainingChances <= 0) {
+            endGame();
+          } else {
+            setTimeout(loadNextQuestion, 1000);
+          }
+        }
+      }, 100);
+    }
+
+    function stopQuestionTimer() {
+      clearInterval(questionTimerInterval);
+    }
+
+    function resetEnergyBar() {
+      if (questionTimeLimit > 0) {
+        document.getElementById('energyBar').style.width = "100%";
+      }
+    }
+
+    /* -------------------------
+       게임 종료 처리
+       ------------------------- */
+    function endGame() {
+      gameInProgress = false;
+      clearInterval(overallTimerInterval);
+      stopQuestionTimer();
+      document.getElementById('gameScreen').classList.add('hidden');
+      document.getElementById('gameOverScreen').classList.remove('hidden');
+      document.getElementById('finalScore').innerText = "최종 점수: " + score;
+      document.getElementById('finalTime').innerText = "총 게임 시간: " + overallTime + "초";
+    }
+
+    /* -------------------------
+       이벤트 리스너 연결
+       ------------------------- */
+    document.getElementById('startButton').addEventListener('click', startGame);
+    document.getElementById('submitScoreButton').addEventListener('click', function() {
+      const name = document.getElementById('playerName').value.trim();
+      saveData("유리수 순환소수 내신빈출(2)", name, score, overallTime);
+    });
+  </script>
+</body>
+</html>
