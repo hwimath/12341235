@@ -79,6 +79,8 @@
     </div>
     <div id="questionContainer"></div>
     <div id="message"></div>
+    <!-- 정답/오답 판정 후 나타나는 다음 문제 버튼 -->
+    <button id="nextQuestionButton" class="hidden">다음문제</button>
   </div>
 
   <!-- 게임 종료 후 점수 전송 화면 -->
@@ -197,7 +199,7 @@
           correct: "\\(129\\)"
         },
         {
-          // → 여기서 교정: 원래 선택지와 정답이 "개" 단위를 사용하고 있었으나, 실제로는 합을 구하는 문제이므로 단위를 제거하고, 계산 결과에 따라 정답을 51로 수정함.
+          // 교정: 원래 선택지와 정답이 "개" 단위를 사용하고 있었으나, 실제로는 합을 구하는 문제이므로 단위를 제거하고, 계산 결과에 따라 정답을 51로 수정함.
           question: "분수 \\(\\dfrac{7}{2 \\times 5^2 \\times a}\\)를 소수로 나타내었을 때 유한소수가 되려면, \\(a\\)가 가질 수 없는(즉, 순환소수가 되는 조건을 만족하지 않는) 자연수들의 합을 구하시오. (단, \\(a < 15\\))",
           choices: ["\\(50\\)", "\\(51\\)", "\\(52\\)", "\\(53\\)", "\\(54\\)"],
           correct: "\\(51\\)"
@@ -386,7 +388,7 @@
       if (questionTimeLimit > 0) {
         startQuestionTimer();
       }
-      // 문제(수식) 동적 렌더링
+      // 수식 렌더링
       MathJax.typeset();
     }
 
@@ -403,26 +405,30 @@
         container.appendChild(btn);
       });
       document.getElementById('message').innerText = "";
+      // 다음 문제 버튼은 새 문제 시작 시 숨김 처리
+      document.getElementById('nextQuestionButton').classList.add('hidden');
       resetEnergyBar();
     }
 
     function checkAnswer(selected) {
       if (!gameInProgress) return;
       stopQuestionTimer();
+      // 선택 버튼 여러번 클릭 방지를 위해 비활성화
+      const buttons = document.querySelectorAll("#questionContainer button");
+      buttons.forEach(btn => btn.disabled = true);
       if (selected === currentQuestion.correct) {
         score += difficultyPoints;
         updateDisplays();
         document.getElementById('message').innerText = "정답!";
-        setTimeout(loadNextQuestion, 1000);
       } else {
         remainingChances--;
         updateDisplays();
         document.getElementById('message').innerText = "오답! 정답은 " + currentQuestion.correct;
-        if (remainingChances <= 0) {
-          endGame();
-        } else {
-          setTimeout(loadNextQuestion, 1000);
-        }
+      }
+      if (remainingChances <= 0) {
+        setTimeout(endGame, 1000);
+      } else {
+        document.getElementById('nextQuestionButton').classList.remove('hidden');
       }
     }
 
@@ -443,10 +449,13 @@
           remainingChances--;
           updateDisplays();
           document.getElementById('message').innerText = "시간 초과! 정답은 " + currentQuestion.correct;
+          // 시간 초과 시 선택 버튼 비활성화
+          const buttons = document.querySelectorAll("#questionContainer button");
+          buttons.forEach(btn => btn.disabled = true);
           if (remainingChances <= 0) {
-            endGame();
+            setTimeout(endGame, 1000);
           } else {
-            setTimeout(loadNextQuestion, 1000);
+            document.getElementById('nextQuestionButton').classList.remove('hidden');
           }
         }
       }, 100);
@@ -482,6 +491,10 @@
     document.getElementById('submitScoreButton').addEventListener('click', function() {
       const name = document.getElementById('playerName').value.trim();
       saveData("유리수 순환소수 내신빈출(2)", name, score, overallTime);
+    });
+    document.getElementById('nextQuestionButton').addEventListener('click', function() {
+      this.classList.add('hidden');
+      loadNextQuestion();
     });
   </script>
 </body>
